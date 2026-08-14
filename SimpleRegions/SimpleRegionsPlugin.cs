@@ -33,7 +33,7 @@ namespace SimpleRegions
         public override string Name => "SimpleRegions";
         public override string Author => "Solevara";
         public override string Description => "Самообслуживание игроков по приватам с бюджетом площади и подсветкой границ";
-        public override Version Version => new Version(1, 0, 2);
+        public override Version Version => new Version(1, 0, 3);
 
         public const string PermClaim = "simpleregions.claim";
         public const string PermShow = "simpleregions.show";

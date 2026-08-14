@@ -102,16 +102,27 @@ namespace SimpleRegions
         public int MaxRegionNameLength = 32;
 
         /// <summary>
-        /// Marker block shown (to that one client only) where a border crosses open air.
-        /// Paint alone is invisible on air, so without this a surface claim's top and side
-        /// borders would not be drawn at all. Glass by default: solid enough to see, and
-        /// not "frame important", so the client frames it itself.
+        /// Marker WALL drawn (for that one client only) where a border crosses empty space.
+        ///
+        /// It must be a wall, not a block: walls have no collision. Faking a solid block in
+        /// mid-air makes the client collide with a phantom the server does not have — players
+        /// stand on air, get stuck, and desync.
         /// </summary>
-        public int HighlightAirBlock = TileID.Glass;
+        public int HighlightAirWall = WallID.Glass;
 
-        // Paint colours used for the fake-tile highlight.
-        public byte PaintOwnRegion = PaintID.GreenPaint;
-        public byte PaintForeignRegion = PaintID.RedPaint;
+        /// <summary>
+        /// Render highlighted tiles fullbright, so a border stays readable in unlit caves and
+        /// at night instead of being just another shade of dark.
+        /// </summary>
+        public bool HighlightGlow = true;
+
+        // Paint colours used for the fake-tile highlight. Combined with HighlightGlow these
+        // read as a shimmering border on your own land and a lava-coloured one on someone
+        // else's — the look of those liquids, with none of their behaviour. Actual liquids
+        // cannot be used: a client that sees lava applies lava damage locally and reports it
+        // to the server, so a purely visual "lava" would really burn the player.
+        public byte PaintOwnRegion = PaintID.CyanPaint;
+        public byte PaintForeignRegion = PaintID.DeepOrangePaint;
         public byte PaintSelection = PaintID.YellowPaint;
         public byte PaintCorner = PaintID.CyanPaint;
 
@@ -170,10 +181,10 @@ namespace SimpleRegions
                 HighlightChunkSize = 50;
             }
             if (MaxRegionNameLength <= 0) { problems.Add("MaxRegionNameLength <= 0, взято 32"); MaxRegionNameLength = 32; }
-            if (HighlightAirBlock <= 0 || HighlightAirBlock >= TileID.Count)
+            if (HighlightAirWall <= 0 || HighlightAirWall >= WallID.Count)
             {
-                problems.Add("HighlightAirBlock вне диапазона id блоков, взято стекло");
-                HighlightAirBlock = TileID.Glass;
+                problems.Add("HighlightAirWall вне диапазона id стен, взята стеклянная стена");
+                HighlightAirWall = WallID.Glass;
             }
 
             if (Messages == null)

@@ -7,7 +7,7 @@
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
     <Authors>Solevara</Authors>
     <Description>TShock plugin: self-service player land claims with area budget and visual borders</Description>
 

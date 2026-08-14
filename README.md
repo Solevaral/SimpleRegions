@@ -119,11 +119,32 @@ Practical details this accounts for:
 * **Cleanup.** Real tiles are restored when the mode is switched off, when the player
   disconnects, and when the plugin unloads.
 
-Existing tiles are only re-**painted**, so they keep their shape. Where a border crosses
-**open air** there is nothing to paint, so a temporary marker block (`HighlightAirBlock`,
-glass by default) is sent for those tiles instead — again to that one client only. Without
-this, a surface claim would be practically invisible, since its top and side borders run
-through open sky.
+Nothing in the highlight ever changes whether a tile is **solid**, so the client's physics
+always agree with the server's:
+
+* a solid tile is only re-**painted**, keeping its shape and collision;
+* empty space is drawn on the **wall** layer instead — walls are purely decorative and have
+  no collision at all. The marker wall (`HighlightAirWall`, glass by default) replaces
+  whatever wall that tile has for this one client, so a border still reads as a border
+  underground, where every tile already has a dirt or stone wall of its own.
+
+Highlighted tiles are also rendered **fullbright** (`HighlightGlow`), so a border stays
+readable in unlit caves and at night rather than being just another shade of dark.
+
+Combined with the glow, the default colours read as a shimmering border on your own land and
+a lava-coloured one on someone else's.
+
+> Two approaches that look obvious but do not work, both for the same reason — the client
+> simulates what it is shown:
+>
+> * **Faking a solid block in mid-air.** The server world is untouched, but the client
+>   collides with the phantom block locally: players walk on air, get stuck, and report
+>   positions the server disagrees with, which also confuses NPC behaviour around them.
+> * **Faking a liquid** (lava for foreign claims, shimmer for your own). Liquids are not
+>   decorative: a client that sees lava treats the player as standing in it and computes the
+>   burn damage locally, then reports that damage to the server. A "purely visual" lava
+>   border would really hurt players. The paint colours above give the same look with none of
+>   the behaviour.
 
 ## Data safety across plugin updates
 
@@ -184,9 +205,10 @@ No third-party NuGet packages beyond TShock and its own dependencies are used.
 | `HighlightRefreshSeconds` | `4` | How often an active highlight is re-sent |
 | `HighlightChunkSize` | `50` | Longest side of a single highlight packet |
 | `MaxRegionNameLength` | `32` | Maximum claim name length |
-| `HighlightAirBlock` | glass | Marker block shown where a border crosses open air |
-| `PaintOwnRegion` | green | Paint id for your own claims |
-| `PaintForeignRegion` | red | Paint id for other players' claims |
+| `HighlightAirWall` | glass wall | Marker wall drawn where a border crosses empty space |
+| `HighlightGlow` | `true` | Render highlighted tiles fullbright so borders show in the dark |
+| `PaintOwnRegion` | cyan | Paint id for your own claims |
+| `PaintForeignRegion` | deep orange | Paint id for other players' claims |
 | `PaintSelection` | yellow | Paint id for the pending selection preview |
 | `PaintCorner` | cyan | Paint id for the first-corner marker |
 | `Messages` | Russian | All player-facing text |
@@ -203,6 +225,11 @@ No third-party NuGet packages beyond TShock and its own dependencies are used.
 
 ## Changelog
 
+* **1.0.3** — the highlight no longer fakes solid blocks. Empty space is drawn on the
+  collision-free wall layer instead, which fixes players walking on / getting stuck in
+  phantom blocks and the NPC oddities that followed from the resulting desync. Highlighted
+  tiles are now fullbright, and the marker wall replaces the existing wall, so borders stay
+  visible underground.
 * **1.0.2** — fixed a startup race that logged a false "these claims have vanished" warning
   on every boot: TShock populates its region list from its own `GamePostInitialize` handler,
   so the integrity check ran against a possibly-empty list. It now runs on the first update

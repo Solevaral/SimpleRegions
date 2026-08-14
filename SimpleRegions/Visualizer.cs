@@ -292,11 +292,11 @@ namespace SimpleRegions
         private struct SavedTile
         {
             public bool Touched;
-            public bool Active;
-            public ushort Type;
             public byte Color;
-            public short FrameX;
-            public short FrameY;
+            public ushort Wall;
+            public byte WallColor;
+            public bool GlowBlock;
+            public bool GlowWall;
         }
 
         /// <summary>
@@ -304,15 +304,22 @@ namespace SimpleRegions
         /// then put them back. SendTileRect serialises the tile data synchronously, so by the
         /// time it returns the world is already untouched again.
         ///
-        /// Solid tiles are only re-PAINTED, so they keep their shape. Air tiles get a
-        /// temporary marker block instead — paint is invisible on air, and without this a
-        /// surface claim would show almost nothing, since its top and side borders run
-        /// through open sky.
+        /// Nothing here ever changes whether a tile is SOLID — only paint and walls:
+        ///  * a solid tile is re-painted, so it keeps its shape;
+        ///  * empty space gets a painted wall (a real one if present, otherwise a marker wall).
+        ///
+        /// Walls are purely decorative and have no collision, which is the whole point. An
+        /// earlier version faked a solid BLOCK in mid-air instead, and although the server
+        /// world was untouched, the client collided with the phantom block locally: players
+        /// walked on air, got stuck, and reported positions the server disagreed with.
         /// </summary>
         private void PaintAndSend(TSPlayer player, PlayerViz viz, int x, int y, int w, int h, byte paint)
         {
             var saved = new SavedTile[w, h];
-            var airBlock = (ushort)Config.HighlightAirBlock;
+            var markerWall = (ushort)Config.HighlightAirWall;
+            // Fullbright makes the border readable in unlit caves and at night; without it a
+            // painted tile underground is just a slightly different shade of dark.
+            var glow = Config.HighlightGlow;
 
             for (var i = 0; i < w; i++)
             {
@@ -324,23 +331,29 @@ namespace SimpleRegions
                     saved[i, j] = new SavedTile
                     {
                         Touched = true,
-                        Active = tile.active(),
-                        Type = tile.type,
                         Color = tile.color(),
-                        FrameX = tile.frameX,
-                        FrameY = tile.frameY
+                        Wall = tile.wall,
+                        WallColor = tile.wallColor(),
+                        GlowBlock = tile.fullbrightBlock(),
+                        GlowWall = tile.fullbrightWall()
                     };
 
-                    if (!tile.active())
+                    if (tile.active())
                     {
-                        // Fake a marker block so the border is visible against the sky.
-                        tile.active(true);
-                        tile.type = airBlock;
-                        tile.frameX = 0;
-                        tile.frameY = 0;
+                        // Solid tile: only re-paint, so its shape and collision are untouched.
+                        tile.color(paint);
+                        if (glow) tile.fullbrightBlock(true);
                     }
-
-                    tile.color(paint);
+                    else
+                    {
+                        // Empty space: use the wall layer, which has no collision at all.
+                        // The marker wall replaces whatever was there for this client, so the
+                        // border still reads as a border underground, where every tile
+                        // already has a dirt/stone wall of its own.
+                        tile.wall = markerWall;
+                        tile.wallColor(paint);
+                        if (glow) tile.fullbrightWall(true);
+                    }
                 }
             }
 
@@ -354,11 +367,11 @@ namespace SimpleRegions
                     var tile = Main.tile[x + i, y + j];
                     if (tile == null) continue;
 
-                    tile.active(saved[i, j].Active);
-                    tile.type = saved[i, j].Type;
                     tile.color(saved[i, j].Color);
-                    tile.frameX = saved[i, j].FrameX;
-                    tile.frameY = saved[i, j].FrameY;
+                    tile.wall = saved[i, j].Wall;
+                    tile.wallColor(saved[i, j].WallColor);
+                    tile.fullbrightBlock(saved[i, j].GlowBlock);
+                    tile.fullbrightWall(saved[i, j].GlowWall);
                 }
             }
 
