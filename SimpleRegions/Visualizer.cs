@@ -135,6 +135,14 @@ namespace SimpleRegions
                 _state.Remove(index);
         }
 
+        /// <summary>Redraws now instead of waiting for the refresh tick (after claim/delete).</summary>
+        public void ForceRefresh(int index)
+        {
+            var viz = GetOrNull(index);
+            if (viz == null) return;
+            viz.NextRefresh = DateTime.MinValue;
+        }
+
         /// <summary>Restores real tiles for everyone — used on plugin unload.</summary>
         public void ClearAll()
         {
@@ -235,7 +243,7 @@ namespace SimpleRegions
                 var plugin = SimpleRegionsPlugin.Instance;
                 foreach (var region in plugin.GetPluginRegionsInView(view))
                 {
-                    var isOwn = string.Equals(region.Owner, player.Name, StringComparison.OrdinalIgnoreCase);
+                    var isOwn = SimpleRegionsPlugin.IsOwnedBy(region.Owner, player);
                     DrawBorder(player, viz, region.Bounds, view,
                         isOwn ? cfg.PaintOwnRegion : cfg.PaintForeignRegion);
                 }
@@ -280,35 +288,79 @@ namespace SimpleRegions
             }
         }
 
+        /// <summary>Everything needed to put one tile back exactly as it was.</summary>
+        private struct SavedTile
+        {
+            public bool Touched;
+            public bool Active;
+            public ushort Type;
+            public byte Color;
+            public short FrameX;
+            public short FrameY;
+        }
+
         /// <summary>
-        /// The core trick: flip paint on the real tiles, build+send the packet for this one
-        /// player, then put the real paint back. SendTileRect serialises the tile data
-        /// synchronously, so by the time it returns the world is already untouched again.
+        /// The core trick: alter the real tiles, build+send the packet for this one player,
+        /// then put them back. SendTileRect serialises the tile data synchronously, so by the
+        /// time it returns the world is already untouched again.
+        ///
+        /// Solid tiles are only re-PAINTED, so they keep their shape. Air tiles get a
+        /// temporary marker block instead — paint is invisible on air, and without this a
+        /// surface claim would show almost nothing, since its top and side borders run
+        /// through open sky.
         /// </summary>
         private void PaintAndSend(TSPlayer player, PlayerViz viz, int x, int y, int w, int h, byte paint)
         {
-            var originals = new byte[w, h];
-            var painted = new bool[w, h];
+            var saved = new SavedTile[w, h];
+            var airBlock = (ushort)Config.HighlightAirBlock;
 
             for (var i = 0; i < w; i++)
             {
                 for (var j = 0; j < h; j++)
                 {
                     var tile = Main.tile[x + i, y + j];
-                    if (tile == null || !tile.active()) continue;   // paint is invisible on air
+                    if (tile == null) continue;
 
-                    originals[i, j] = tile.color();
+                    saved[i, j] = new SavedTile
+                    {
+                        Touched = true,
+                        Active = tile.active(),
+                        Type = tile.type,
+                        Color = tile.color(),
+                        FrameX = tile.frameX,
+                        FrameY = tile.frameY
+                    };
+
+                    if (!tile.active())
+                    {
+                        // Fake a marker block so the border is visible against the sky.
+                        tile.active(true);
+                        tile.type = airBlock;
+                        tile.frameX = 0;
+                        tile.frameY = 0;
+                    }
+
                     tile.color(paint);
-                    painted[i, j] = true;
                 }
             }
 
             player.SendTileRect((short)x, (short)y, (byte)w, (byte)h);
 
             for (var i = 0; i < w; i++)
+            {
                 for (var j = 0; j < h; j++)
-                    if (painted[i, j])
-                        Main.tile[x + i, y + j].color(originals[i, j]);
+                {
+                    if (!saved[i, j].Touched) continue;
+                    var tile = Main.tile[x + i, y + j];
+                    if (tile == null) continue;
+
+                    tile.active(saved[i, j].Active);
+                    tile.type = saved[i, j].Type;
+                    tile.color(saved[i, j].Color);
+                    tile.frameX = saved[i, j].FrameX;
+                    tile.frameY = saved[i, j].FrameY;
+                }
+            }
 
             lock (viz.Sent)
                 viz.Sent.Add((x, y, w, h));
@@ -316,7 +368,7 @@ namespace SimpleRegions
             lock (viz.Tiles)
                 for (var i = 0; i < w; i++)
                     for (var j = 0; j < h; j++)
-                        if (painted[i, j])
+                        if (saved[i, j].Touched)
                             viz.Tiles.Add(Pack(x + i, y + j));
         }
     }

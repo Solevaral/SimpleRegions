@@ -63,6 +63,8 @@ namespace SimpleRegions
 
         // Highlight
         public string ShowOn = "Подсветка границ включена (радиус {0} блоков). Свои приваты — одним цветом, чужие — другим.";
+        public string ShowOnCount = "Рядом подсвечено приватов: {0}.";
+        public string ShowOnNothing = "Рядом (в радиусе {0} блоков) приватов нет — подсвечивать нечего. Подойдите к привату или создайте новый.";
         public string ShowOff = "Подсветка границ выключена.";
         public string HighlightCleared = "Подсветка снята (вы взаимодействовали с подсвеченным блоком).";
 
@@ -98,6 +100,14 @@ namespace SimpleRegions
         public int HighlightChunkSize = 50;
 
         public int MaxRegionNameLength = 32;
+
+        /// <summary>
+        /// Marker block shown (to that one client only) where a border crosses open air.
+        /// Paint alone is invisible on air, so without this a surface claim's top and side
+        /// borders would not be drawn at all. Glass by default: solid enough to see, and
+        /// not "frame important", so the client frames it itself.
+        /// </summary>
+        public int HighlightAirBlock = TileID.Glass;
 
         // Paint colours used for the fake-tile highlight.
         public byte PaintOwnRegion = PaintID.GreenPaint;
@@ -160,6 +170,11 @@ namespace SimpleRegions
                 HighlightChunkSize = 50;
             }
             if (MaxRegionNameLength <= 0) { problems.Add("MaxRegionNameLength <= 0, взято 32"); MaxRegionNameLength = 32; }
+            if (HighlightAirBlock <= 0 || HighlightAirBlock >= TileID.Count)
+            {
+                problems.Add("HighlightAirBlock вне диапазона id блоков, взято стекло");
+                HighlightAirBlock = TileID.Glass;
+            }
 
             if (Messages == null)
             {

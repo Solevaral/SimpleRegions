@@ -93,6 +93,18 @@ namespace SimpleRegions
         }
 
         /// <summary>
+        /// Vertical tile a corner mark snaps to: the block the player is standing on.
+        ///
+        /// A player's position.Y is the TOP of their sprite, so the naive tile (position.Y/16)
+        /// sits at head height — roughly 3 tiles above the floor they are standing on, which
+        /// would leave that floor outside the claim.
+        /// </summary>
+        public static int AnchorTileY(float positionY, int playerHeight)
+        {
+            return (int)((positionY + playerHeight) / 16f);
+        }
+
+        /// <summary>
         /// Converts an inclusive <see cref="Rect"/> into the Width/Height a TShock region
         /// must be created with.
         ///

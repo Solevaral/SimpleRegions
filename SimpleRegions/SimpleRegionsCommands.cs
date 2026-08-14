@@ -94,13 +94,29 @@ namespace SimpleRegions
         // Selection
         // ------------------------------------------------------------------
 
+        /// <summary>
+        /// Tile a corner mark snaps to vertically: the block the player is STANDING ON.
+        ///
+        /// TSPlayer.TileY comes from position.Y, which is the TOP of the sprite, so using it
+        /// puts the corner at head height — the whole claim ends up shifted ~3 tiles up and
+        /// the floor the player marked from is left unprotected. Taking the bottom edge of
+        /// the hitbox lands exactly on the block being stood on, which is what players expect
+        /// to be inside their claim.
+        /// </summary>
+        private static int AnchorTileY(TSPlayer player)
+        {
+            var tplayer = player.TPlayer;
+            if (tplayer == null) return player.TileY;
+            return AreaMath.AnchorTileY(tplayer.position.Y, tplayer.height);
+        }
+
         private static void CmdPos(CommandArgs args, int which)
         {
             var p = SimpleRegionsPlugin.Instance;
             if (!RequirePermission(args, SimpleRegionsPlugin.PermClaim)) return;
 
             var x = args.Player.TileX;
-            var y = args.Player.TileY;
+            var y = AnchorTileY(args.Player);
 
             if (which == 1)
             {
@@ -136,7 +152,7 @@ namespace SimpleRegions
             var p = SimpleRegionsPlugin.Instance;
             if (args.Player.HasPermission(SimpleRegionsPlugin.PermAdmin)) return;
 
-            var existing = p.GetPlayerRegions(args.Player.Name).Select(r => r.Bounds).ToList();
+            var existing = p.GetPlayerRegions(args.Player).Select(r => r.Bounds).ToList();
             var used = AreaMath.UnionArea(existing);
             var cost = AreaMath.AdditionalCost(existing, rect);
             var free = p.Config.AreaBudgetPerPlayer - used;
@@ -178,7 +194,7 @@ namespace SimpleRegions
                     return;
                 }
                 var cx = args.Player.TileX;
-                var cy = args.Player.TileY;
+                var cy = AnchorTileY(args.Player);
                 rect = new Rect(cx - radius, cy - radius, cx + radius, cy + radius);
             }
             else
@@ -254,7 +270,7 @@ namespace SimpleRegions
                 if (!bounds.Intersects(rect)) continue;
 
                 var isPluginClaim = claimNames.Contains(region.Name);
-                var isOwn = string.Equals(region.Owner, args.Player.Name, StringComparison.OrdinalIgnoreCase);
+                var isOwn = SimpleRegionsPlugin.IsOwnedBy(region.Owner, args.Player);
 
                 if (isPluginClaim && isOwn) continue;
 
@@ -268,7 +284,7 @@ namespace SimpleRegions
             }
 
             // Budget: charge only land the player does not already own.
-            var existing = p.GetPlayerRegions(args.Player.Name).Select(r => r.Bounds).ToList();
+            var existing = p.GetPlayerRegions(args.Player).Select(r => r.Bounds).ToList();
             var used = AreaMath.UnionArea(existing);
             var cost = AreaMath.AdditionalCost(existing, rect);
             var free = cfg.AreaBudgetPerPlayer - used;
@@ -292,7 +308,9 @@ namespace SimpleRegions
             // TShock stores width/height one less than the protected tile count.
             AreaMath.ToTShockSize(rect, out var storedW, out var storedH);
 
-            if (!TShock.Regions.AddRegion(rect.X1, rect.Y1, storedW, storedH, name, args.Player.Name, p.WorldId))
+            var ownerName = SimpleRegionsPlugin.OwnerNameOf(args.Player);
+
+            if (!TShock.Regions.AddRegion(rect.X1, rect.Y1, storedW, storedH, name, ownerName, p.WorldId))
             {
                 args.Player.SendErrorMessage(cfg.Messages.CreateFailed);
                 TShock.Log.ConsoleError("[SimpleRegions] AddRegion вернул false для '" + name + "' (игрок " + args.Player.Name + ").");
@@ -301,7 +319,7 @@ namespace SimpleRegions
 
             try
             {
-                p.Db.AddClaim(name, p.WorldId, args.Player.Name);
+                p.Db.AddClaim(name, p.WorldId, ownerName);
             }
             catch (Exception ex)
             {
@@ -348,7 +366,7 @@ namespace SimpleRegions
         private static void CmdList(CommandArgs args)
         {
             var p = SimpleRegionsPlugin.Instance;
-            var regions = p.GetPlayerRegions(args.Player.Name);
+            var regions = p.GetPlayerRegions(args.Player);
 
             if (regions.Count == 0)
             {
@@ -533,6 +551,9 @@ namespace SimpleRegions
             args.Player.SendSuccessMessage(SimpleRegionsPlugin.Format(p.Config.Messages.Deleted,
                 region.Name, freed, usedAfter, p.Config.AreaBudgetPerPlayer));
 
+            // Redraw at once so the deleted border disappears immediately.
+            p.Viz.ForceRefresh(args.Player.Index);
+
             TShock.Log.ConsoleInfo("[SimpleRegions] " + args.Player.Name + " удалил приват '" + region.Name + "'.");
         }
 
@@ -545,7 +566,7 @@ namespace SimpleRegions
             var p = SimpleRegionsPlugin.Instance;
             var isAdmin = args.Player.HasPermission(SimpleRegionsPlugin.PermAdmin);
 
-            var candidates = isAdmin ? p.GetAllPluginRegions() : p.GetPlayerRegions(args.Player.Name);
+            var candidates = isAdmin ? p.GetAllPluginRegions() : p.GetPlayerRegions(args.Player);
             var region = candidates.FirstOrDefault(r => string.Equals(r.Name, regionName, StringComparison.OrdinalIgnoreCase));
 
             if (region != null) return region;
@@ -570,9 +591,25 @@ namespace SimpleRegions
             if (!RequirePermission(args, SimpleRegionsPlugin.PermShow)) return;
 
             var on = p.Viz.ToggleShow(args.Player.Index);
-            args.Player.SendSuccessMessage(on
-                ? SimpleRegionsPlugin.Format(p.Config.Messages.ShowOn, p.Config.HighlightRadius)
-                : p.Config.Messages.ShowOff);
+            if (!on)
+            {
+                args.Player.SendSuccessMessage(p.Config.Messages.ShowOff);
+                return;
+            }
+
+            args.Player.SendSuccessMessage(SimpleRegionsPlugin.Format(p.Config.Messages.ShowOn, p.Config.HighlightRadius));
+
+            // Say how much is actually being drawn: "I see nothing" is otherwise ambiguous
+            // between "the feature is broken" and "there is simply nothing nearby".
+            var radius = p.Config.HighlightRadius;
+            var view = new Rect(
+                args.Player.TileX - radius, args.Player.TileY - radius,
+                args.Player.TileX + radius, args.Player.TileY + radius);
+            var nearby = p.GetPluginRegionsInView(view).Count;
+
+            args.Player.SendInfoMessage(nearby > 0
+                ? SimpleRegionsPlugin.Format(p.Config.Messages.ShowOnCount, nearby)
+                : SimpleRegionsPlugin.Format(p.Config.Messages.ShowOnNothing, radius));
         }
 
         private static bool RequirePermission(CommandArgs args, string permission)

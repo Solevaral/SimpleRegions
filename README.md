@@ -69,8 +69,20 @@ protection.
 | `/rg delete <name>` | `simpleregions.claim` | Delete your own claim |
 | `/rg show` | `simpleregions.show` | Toggle border highlighting |
 
-Command alias: `/regions`. Players can only ever manage **their own** claims; holders of
-`simpleregions.admin` bypass the size/budget/overlap limits and may manage anyone's.
+Command alias: `/regions`. Players can only ever manage **their own** claims.
+
+Holders of `simpleregions.admin` additionally:
+
+* bypass the size, budget and overlap limits;
+* may `/rg delete`, `/rg add` and `/rg remove` on **anyone's** claim;
+* may **build and break blocks inside any claim** without being added to it — needed for
+  clearing griefed builds or fixing someone's claim. This applies only to claims created by
+  this plugin; ordinary admin regions are left entirely to TShock's own permission handling.
+
+**Corner anchoring:** marking a corner snaps to the block you are **standing on**, not to
+your head. A player's position is measured from the top of their sprite, so anchoring
+naively would place corners ~3 tiles too high and leave the floor you marked from outside
+the claim.
 
 `/rg info` lists **all** regions at your position when they overlap, with owners, and says
 outright that they are layered:
@@ -107,9 +119,11 @@ Practical details this accounts for:
 * **Cleanup.** Real tiles are restored when the mode is switched off, when the player
   disconnects, and when the plugin unloads.
 
-One inherent limitation of paint-based highlighting: paint is only visible on solid tiles,
-so border segments that run through open air are not drawn. This is a direct consequence of
-colouring real tiles instead of replacing blocks (which would be far more disruptive).
+Existing tiles are only re-**painted**, so they keep their shape. Where a border crosses
+**open air** there is nothing to paint, so a temporary marker block (`HighlightAirBlock`,
+glass by default) is sent for those tiles instead — again to that one client only. Without
+this, a surface claim would be practically invisible, since its top and side borders run
+through open sky.
 
 ## Data safety across plugin updates
 
@@ -170,6 +184,7 @@ No third-party NuGet packages beyond TShock and its own dependencies are used.
 | `HighlightRefreshSeconds` | `4` | How often an active highlight is re-sent |
 | `HighlightChunkSize` | `50` | Longest side of a single highlight packet |
 | `MaxRegionNameLength` | `32` | Maximum claim name length |
+| `HighlightAirBlock` | glass | Marker block shown where a border crosses open air |
 | `PaintOwnRegion` | green | Paint id for your own claims |
 | `PaintForeignRegion` | red | Paint id for other players' claims |
 | `PaintSelection` | yellow | Paint id for the pending selection preview |

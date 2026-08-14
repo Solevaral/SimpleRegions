@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -33,7 +33,7 @@ namespace SimpleRegions
         public override string Name => "SimpleRegions";
         public override string Author => "Solevara";
         public override string Description => "Самообслуживание игроков по приватам с бюджетом площади и подсветкой границ";
-        public override Version Version => new Version(1, 0, 0);
+        public override Version Version => new Version(1, 0, 1);
 
         public const string PermClaim = "simpleregions.claim";
         public const string PermShow = "simpleregions.show";
@@ -183,11 +183,22 @@ namespace SimpleRegions
                     .Where(r => r.WorldID == WorldId && r.InArea(args.X, args.Y))
                     .ToList();
 
-                if (regions.Count < 2) return;   // no layering here, nothing to correct
+                if (regions.Count == 0) return;
 
                 var claims = GetClaimNames();
                 if (regions.Any(r => !claims.Contains(r.Name)))
                     return;   // an admin region is involved — defer to TShock entirely
+
+                // Whoever administers claims must be able to work inside them (clearing
+                // griefed builds, fixing a claim for a player) without being added to each
+                // one by hand. Scoped to plugin claims only, per the check above.
+                if (args.Player.HasPermission(PermAdmin))
+                {
+                    args.Result = PermissionHookResult.Granted;
+                    return;
+                }
+
+                if (regions.Count < 2) return;   // no layering here, nothing to correct
 
                 if (regions.Any(r => r.HasPermissionToBuildInRegion(args.Player)))
                     args.Result = PermissionHookResult.Granted;
@@ -264,6 +275,35 @@ namespace SimpleRegions
             return GetAllPluginRegions()
                 .Where(r => string.Equals(r.Owner, playerName, StringComparison.OrdinalIgnoreCase))
                 .ToList();
+        }
+
+        /// <summary>
+        /// The name a claim is recorded under. TShock compares a region's Owner against the
+        /// ACCOUNT name when deciding who may build, so the account name is what must be
+        /// stored — using the character name would lock owners out of their own claims
+        /// whenever the two differ.
+        /// </summary>
+        internal static string OwnerNameOf(TSPlayer player)
+        {
+            if (player == null) return null;
+            return string.IsNullOrEmpty(player.Account?.Name) ? player.Name : player.Account.Name;
+        }
+
+        /// <summary>
+        /// Matches on account name or character name — claims created before the account-name
+        /// fix are stored under the character name and must keep working.
+        /// </summary>
+        internal static bool IsOwnedBy(string owner, TSPlayer player)
+        {
+            if (player == null || string.IsNullOrEmpty(owner)) return false;
+            if (string.Equals(owner, player.Name, StringComparison.OrdinalIgnoreCase)) return true;
+            var account = player.Account?.Name;
+            return !string.IsNullOrEmpty(account) && string.Equals(owner, account, StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal List<PluginRegion> GetPlayerRegions(TSPlayer player)
+        {
+            return GetAllPluginRegions().Where(r => IsOwnedBy(r.Owner, player)).ToList();
         }
 
         internal List<PluginRegion> GetPluginRegionsInView(Rect view)
