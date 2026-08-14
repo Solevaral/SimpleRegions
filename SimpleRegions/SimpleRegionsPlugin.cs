@@ -33,7 +33,7 @@ namespace SimpleRegions
         public override string Name => "SimpleRegions";
         public override string Author => "Solevara";
         public override string Description => "Самообслуживание игроков по приватам с бюджетом площади и подсветкой границ";
-        public override Version Version => new Version(1, 0, 1);
+        public override Version Version => new Version(1, 0, 2);
 
         public const string PermClaim = "simpleregions.claim";
         public const string PermShow = "simpleregions.show";
@@ -46,6 +46,7 @@ namespace SimpleRegions
         internal readonly Visualizer Viz = new Visualizer();
 
         private bool _ready;
+        private bool _integrityChecked;
 
         internal string WorldId => Main.worldID.ToString();
         internal bool Ready => _ready;
@@ -125,14 +126,12 @@ namespace SimpleRegions
             {
                 Db = new SimpleRegionsDb(TShock.DB);
 
-                var names = new HashSet<string>(
-                    TShock.Regions.Regions
-                        .Where(r => r.WorldID == WorldId)
-                        .Select(r => r.Name),
-                    StringComparer.OrdinalIgnoreCase);
-
-                Db.ReportIntegrity(WorldId, names);
-
+                // The integrity check deliberately does NOT run here. TShock loads its region
+                // list inside its own GamePostInitialize handler, so on this very hook the
+                // list may still be empty depending on which plugin's handler runs first —
+                // which produced a false "these claims have vanished" warning every startup.
+                // It is deferred to the first update tick instead, which is guaranteed to be
+                // after every plugin's GamePostInitialize handler has finished.
                 _ready = true;
                 TShock.Log.ConsoleInfo("[SimpleRegions] Готов, мир " + WorldId + ".");
             }
@@ -147,8 +146,39 @@ namespace SimpleRegions
         private void OnUpdate(EventArgs args)
         {
             if (!_ready) return;
+
+            if (!_integrityChecked)
+            {
+                _integrityChecked = true;
+                RunIntegrityCheck();
+            }
+
             try { Viz.Pump(); }
             catch (Exception ex) { TShock.Log.ConsoleError("[SimpleRegions] Ошибка в цикле обновления: " + ex.Message); }
+        }
+
+        /// <summary>
+        /// Compares plugin metadata against TShock's region list. Runs on the first update
+        /// tick rather than on GamePostInitialize: TShock populates that list from its own
+        /// handler of the same hook, so checking during the hook races against it and can
+        /// see an empty list.
+        /// </summary>
+        private void RunIntegrityCheck()
+        {
+            try
+            {
+                var names = new HashSet<string>(
+                    TShock.Regions.Regions
+                        .Where(r => r.WorldID == WorldId)
+                        .Select(r => r.Name),
+                    StringComparer.OrdinalIgnoreCase);
+
+                Db.ReportIntegrity(WorldId, names);
+            }
+            catch (Exception ex)
+            {
+                TShock.Log.ConsoleError("[SimpleRegions] Ошибка проверки целостности: " + ex.Message);
+            }
         }
 
         private void OnServerLeave(LeaveEventArgs args)

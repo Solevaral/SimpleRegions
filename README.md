@@ -201,6 +201,18 @@ No third-party NuGet packages beyond TShock and its own dependencies are used.
   plugin converts explicitly (verified against the real `Region` class in tests), so the
   area a player is charged is exactly the area that ends up protected.
 
+## Changelog
+
+* **1.0.2** — fixed a startup race that logged a false "these claims have vanished" warning
+  on every boot: TShock populates its region list from its own `GamePostInitialize` handler,
+  so the integrity check ran against a possibly-empty list. It now runs on the first update
+  tick, guaranteed to be after every plugin's `GamePostInitialize`. No other logic changed.
+* **1.0.1** — borders are now visible where they cross open air (marker block instead of
+  paint, which only shows on solid tiles); corners anchor to the block you stand on rather
+  than head height; `simpleregions.admin` may build inside any claim; claims are recorded
+  under the account name.
+* **1.0.0** — initial release.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
